@@ -1,137 +1,130 @@
-# System Architecture
+# Architecture: Predictive ML Models
 
-## Overview
+## System Design
 
-This POC implements a production-ready ML platform for healthcare and financial predictions with emphasis on explainability, drift detection, and compliance.
+```
+┌──────────────────────────────────────────────────────────┐
+│                  FastAPI Web Service                      │
+│              (Health Check, Predictions, Training)       │
+└────────────────────┬─────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        │            │            │
+   ┌────▼────┐  ┌───▼──────┐  ┌─▼──────────┐
+   │Healthcare│  │ Pattern  │  │   Ensemble │
+   │Predictor │  │Detector  │  │   Models   │
+   │Ensemble  │  │(XGBoost) │  │(Stacking)  │
+   └────┬────┘  └───┬──────┘  └─┬──────────┘
+        │            │          │
+        └────────────┼──────────┘
+                     │
+        ┌────────────▼──────────┐
+        │  Feature Engineering  │
+        │  Pipeline             │
+        │  - Scaling            │
+        │  - Normalization      │
+        │  - Temporal features  │
+        │  - Technical indicators
+        └────────────┬──────────┘
+                     │
+        ┌────────────▼──────────┐
+        │  Data Layer           │
+        │  - CSV Loaders        │
+        │  - Validators         │
+        │  - Train/Val/Test     │
+        └───────────────────────┘
+```
 
-## Core Modules
+## Module Organization
 
-### 1. Data Pipeline (`src/data/`)
-- **loader.py**: CSV loading, validation, HIPAA-ready data handling
-- **preprocessor.py**: Feature engineering, outlier detection, categorical encoding
-- **splitter.py**: Train/val/test splitting, k-fold CV, time-series split
+### Data Layer (`src/data/`)
+- **loader.py**: CSV data loading and validation
+- **preprocessor.py**: Feature engineering for healthcare and finance
+- **splitter.py**: Train/validation/test splitting with stratification
 
-### 2. Models (`src/models/`)
-- **health_predictor.py**: XGBoost/LightGBM classifier for GAD-7 deterioration
-- **pattern_detector.py**: Random Forest for technical chart pattern recognition
-- **time_series.py**: LSTM + statistical forecasting for price prediction
-- **ensemble.py**: Weighted voting ensemble combining multiple models
+### Model Layer (`src/models/`)
+- **base_model.py**: Abstract base class for all models
+- **health_predictor.py**: Ensemble predictor for GAD-7 deterioration
+- **pattern_detector.py**: Multi-class pattern classifier (triangle/wedge/flag/other)
+- **time_series.py**: LSTM and Prophet forecasting models
+- **ensemble.py**: Stacking and advanced ensemble methods
 
-### 3. Training (`src/training/`)
-- **trainer.py**: Model training pipeline with cross-validation
-- **hyperopt.py**: Optuna-based hyperparameter tuning
-- **cross_validator.py**: K-fold and stratified validation
+### Evaluation Layer (`src/evaluation/`)
+- **metrics.py**: Classification and regression metrics
+- **explainability.py**: SHAP and LIME interpretation
+- **monitoring.py**: Drift detection and performance monitoring
 
-### 4. Evaluation (`src/evaluation/`)
-- **metrics.py**: Classification + regression metrics, fairness metrics
-- **explainability.py**: SHAP TreeExplainer, LIME, PDP explanations
-- **drift_detector.py**: KS test, Population Stability Index monitoring
+### API Layer (`src/api/`)
+- **routes.py**: FastAPI endpoints for predictions and training
+- **models.py**: Pydantic request/response schemas
 
-### 5. Serving (`src/serving/`)
-- **predictor.py**: Real-time inference with explanation generation
-- **batch_predictor.py**: CSV batch processing with error handling
-
-### 6. API (`src/api/`)
-- **routes.py**: FastAPI endpoints for health/stock predictions
-- **models.py**: Pydantic request/response validation
-
-### 7. Configuration (`src/config.py`)
-- Environment-based configuration (dev/prod/test)
-- HIPAA and financial compliance settings
-- Model paths, thresholds, monitoring parameters
+### Pipelines (`src/pipelines/`)
+- **healthcare_pipeline.py**: End-to-end healthcare prediction
+- **finance_pipeline.py**: End-to-end pattern detection
 
 ## Data Flow
 
+### Training Flow
 ```
-Input Data (CSV/API Request)
+Raw Data (CSV)
     ↓
-Data Loader (validation, handling missing values)
+Data Validation
     ↓
-Preprocessor (feature engineering, scaling)
+Feature Engineering
     ↓
-Model Prediction (XGBoost/LSTM/Pattern Detector)
+Data Splitting (70/15/15)
     ↓
-Explainer (SHAP values)
+Model Training
     ↓
-Drift Detector (statistical tests)
+Evaluation & Metrics
     ↓
-Output (JSON response with confidence + explanations)
-```
-
-## Healthcare Prediction Pipeline
-
-1. **Feature Extraction**: GAD-7 score, age, BMI, sleep patterns
-2. **Preprocessing**: Outlier removal, categorical encoding, scaling
-3. **Model**: XGBoost binary classifier (deterioration yes/no)
-4. **Output**: Risk level (safe/warning/critical) + probability
-5. **Explainability**: SHAP force plots showing feature contributions
-6. **Monitoring**: Drift detection on incoming patient data
-
-## Finance Prediction Pipeline
-
-1. **Data Ingestion**: OHLCV data from CSV or API
-2. **Feature Engineering**: Technical indicators (volatility, support/resistance, momentum)
-3. **Pattern Detection**: CNN/RF classifier for chart patterns
-4. **Forecasting**: LSTM for 5-30 day price prediction with confidence intervals
-5. **Drift Monitoring**: Regime detection for changing market conditions
-
-## Deployment Architecture
-
-```
-Client
-  ↓
-FastAPI (uvicorn)
-  ├─ Health endpoint (/predict/health)
-  ├─ Stock endpoint (/predict/stock)
-  ├─ Batch endpoint (/predict/health/batch)
-  ├─ Explain endpoint (/explain/health/{id})
-  └─ Drift endpoint (/market/drift)
-  ↓
-Models (pickled .pkl files)
-  ├─ health_model.pkl
-  ├─ stock_model.pkl
-  └─ scaler (StandardScaler)
-  ↓
-Disk Storage
-  ├─ Data (CSV)
-  ├─ Logs (audit trails)
-  └─ Models (versioned)
+Model Serialization
 ```
 
-## Scalability
+### Prediction Flow
+```
+Input Features
+    ↓
+Feature Preprocessing
+    ↓
+Model Prediction
+    ↓
+SHAP Explanation
+    ↓
+Drift Detection
+    ↓
+API Response
+```
 
-- **Horizontal**: Multi-worker Uvicorn with load balancer
-- **Vertical**: Batch prediction for 10,000+ samples/day
-- **Caching**: SHAP result caching to reduce latency
-- **Async**: FastAPI async handlers for concurrent requests
+## Key Design Patterns
 
-## Monitoring & Compliance
+1. **Abstract Base Model**: All models inherit from `BaseModel` for consistent interface
+2. **Ensemble Methods**: Multiple models combined for robustness
+3. **Pipeline Architecture**: Modular, composable components
+4. **Feature Engineering**: Domain-specific feature creation
+5. **Explainability**: SHAP/LIME for model interpretability
+6. **Monitoring**: Drift detection and performance tracking
 
-### Healthcare (HIPAA)
-- Audit logging of all predictions
-- Patient data retention policies (2555 days)
-- PII masking options
-- Fairness metrics tracking
+## Technology Stack
 
-### Finance (SEC Rule 10b5)
-- Model drift detection and alerts
-- Feature stability monitoring
-- Prediction confidence thresholds
-- Backtesting and paper trading support
+| Component | Technology |
+|-----------|-----------|
+| API | FastAPI, Uvicorn |
+| ML | scikit-learn, XGBoost, LightGBM |
+| Deep Learning | TensorFlow/Keras, PyTorch-ready |
+| Time Series | Prophet, statsmodels |
+| NLP | NLTK, TextBlob |
+| Explainability | SHAP, LIME |
+| Data Processing | Pandas, NumPy, SciPy |
+| Testing | pytest |
+| Containerization | Docker, docker-compose |
 
-## Testing Coverage
+## Scalability Considerations
 
-- **Unit**: Preprocessing, model training, prediction logic
-- **Integration**: Data pipeline end-to-end
-- **Performance**: Latency benchmarks (<200ms target)
-- **Fairness**: Demographic parity and equalized odds
-
-## Model Performance Targets
-
-| Model | Metric | Target |
-|-------|--------|--------|
-| Health | AUC | > 0.85 |
-| Health | Latency | < 100ms |
-| Stock | MAE | < $3/share |
-| Stock | Directional Accuracy | > 55% |
-| Stock | Latency | < 200ms |
+- Models serialized with joblib for fast loading
+- Batch prediction support for high-throughput scenarios
+- API stateless for horizontal scaling
+- Database abstraction for persistence
+- Asynchronous training job support
+- Model versioning and A/B testing ready
