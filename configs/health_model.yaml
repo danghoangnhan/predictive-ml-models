@@ -1,0 +1,81 @@
+model:
+  name: "Mental Health Deterioration Predictor"
+  algorithm: xgboost
+  version: "1.0"
+  description: "Predicts clinical deterioration in anxiety disorder patients using GAD-7 scores"
+
+features:
+  - name: gad7_score
+    type: numeric
+    range: [0, 21]
+    description: "Generalized Anxiety Disorder 7-item scale"
+  - name: age
+    type: numeric
+    range: [0, 120]
+    description: "Patient age in years"
+  - name: gender
+    type: categorical
+    values: ["M", "F"]
+  - name: bmi
+    type: numeric
+    range: [15, 40]
+    description: "Body Mass Index"
+  - name: sleep_hours
+    type: numeric
+    range: [0, 12]
+    description: "Average sleep hours per night"
+
+target:
+  name: clinical_deterioration
+  type: binary
+  values: [0, 1]
+  threshold: 0.65
+
+training:
+  algorithm: xgboost
+  test_size: 0.2
+  validation_size: 0.1
+  cv_folds: 5
+  random_state: 42
+
+hyperparameters:
+  n_estimators: 100
+  max_depth: 6
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  gamma: 0
+  min_child_weight: 1
+
+optimization:
+  method: optuna
+  n_trials: 100
+  timeout: 3600
+  direction: maximize
+  scoring: roc_auc
+
+evaluation:
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+    - roc_auc
+  cross_validation: stratified
+  stratify_target: true
+
+explainability:
+  method: shap
+  background_samples: 100
+  explain_probability: true
+
+performance_targets:
+  min_auc: 0.85
+  min_precision: 0.80
+  max_latency_ms: 100
+
+monitoring:
+  drift_detection: true
+  drift_threshold: 0.15
+  drift_test: ks_test
+  retraining_frequency: weekly

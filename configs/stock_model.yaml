@@ -1,0 +1,73 @@
+model:
+  name: "Stock Pattern & Price Forecaster"
+  version: "1.0"
+  description: "Detects technical chart patterns and forecasts stock prices"
+
+pattern_detection:
+  algorithm: random_forest
+  n_estimators: 100
+  max_depth: 8
+  patterns:
+    - head_shoulders
+    - double_bottom
+    - triangle
+    - breakout
+    - consolidation
+
+time_series_forecasting:
+  algorithm: lstm
+  lstm_units: 128
+  lookback_window: 60
+  forecast_horizon: 30
+  epochs: 50
+  batch_size: 32
+
+features:
+  - name: ohlcv
+    type: time_series
+    components: [open, high, low, close, volume]
+  - name: volatility
+    type: derived
+    lookback: 20
+  - name: moving_averages
+    type: derived
+    periods: [20, 50, 200]
+  - name: momentum
+    type: derived
+    description: "Price momentum and rate of change"
+  - name: support_resistance
+    type: derived
+    lookback: 20
+  - name: volume_profile
+    type: derived
+    lookback: 20
+
+training:
+  test_size: 0.2
+  validation_size: 0.1
+  time_series_split: true
+  random_state: 42
+
+evaluation:
+  metrics:
+    - mae
+    - mse
+    - rmse
+    - mape
+    - directional_accuracy
+  forecast_horizons: [5, 10, 30]
+
+explainability:
+  feature_importance: true
+  pattern_confidence: true
+
+performance_targets:
+  max_mae: 3.0
+  min_directional_accuracy: 0.55
+  max_latency_ms: 200
+
+monitoring:
+  drift_detection: true
+  drift_threshold: 0.15
+  drift_test: ks_test
+  market_regime_detection: true
