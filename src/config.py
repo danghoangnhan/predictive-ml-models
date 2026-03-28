@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -21,29 +21,35 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 class Settings:
     """Application settings from environment variables."""
-    
+
     # API Configuration
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", 8000))
     API_DEBUG: bool = os.getenv("API_DEBUG", "false").lower() == "true"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    
+
     # Model Configuration
-    HEALTHCARE_MODEL_PATH: str = os.getenv("HEALTHCARE_MODEL_PATH", str(MODELS_DIR / "healthcare_ensemble.pkl"))
-    FINANCE_MODEL_PATH: str = os.getenv("FINANCE_MODEL_PATH", str(MODELS_DIR / "finance_xgboost.pkl"))
-    
+    HEALTHCARE_MODEL_PATH: str = os.getenv(
+        "HEALTHCARE_MODEL_PATH", str(MODELS_DIR / "healthcare_ensemble.pkl")
+    )
+    FINANCE_MODEL_PATH: str = os.getenv(
+        "FINANCE_MODEL_PATH", str(MODELS_DIR / "finance_xgboost.pkl")
+    )
+
     # Data Configuration
     DATA_PATH: str = os.getenv("DATA_PATH", str(DATA_DIR))
     SAMPLE_DATA_PATH: str = os.getenv("SAMPLE_DATA_PATH", str(SAMPLE_DATA_DIR))
-    
+
     # Logging Configuration
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE: str = os.getenv("LOG_FILE", str(LOGS_DIR / "app.log"))
-    
+
     # Monitoring
     DRIFT_DETECTION_ENABLED: bool = os.getenv("DRIFT_DETECTION_ENABLED", "true").lower() == "true"
-    RETRAINING_TRIGGER_ENABLED: bool = os.getenv("RETRAINING_TRIGGER_ENABLED", "true").lower() == "true"
-    
+    RETRAINING_TRIGGER_ENABLED: bool = (
+        os.getenv("RETRAINING_TRIGGER_ENABLED", "true").lower() == "true"
+    )
+
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-here-change-in-production")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")

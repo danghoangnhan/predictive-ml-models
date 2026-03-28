@@ -1,13 +1,13 @@
 """Prediction script."""
 
 import argparse
-import logging
 import json
+import logging
 from pathlib import Path
 
 from src.config import config
 from src.models import HealthPredictor
-from src.serving import Predictor, BatchPredictor
+from src.serving import BatchPredictor, Predictor
 
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -41,7 +41,7 @@ def predict_single(args):
 
     result = predictor.predict_health(patient_data, explain=args.explain)
 
-    logger.info(f"Prediction result:")
+    logger.info("Prediction result:")
     logger.info(json.dumps(result, indent=2, default=str))
 
     return True
@@ -69,7 +69,9 @@ def predict_batch(args):
 
     results = batch_predictor.predict_from_csv(csv_path)
 
-    logger.info(f"Batch prediction completed: {results['successful_predictions']}/{results['total_samples']}")
+    logger.info(
+        f"Batch prediction completed: {results['successful_predictions']}/{results['total_samples']}"
+    )
 
     # Save results
     output_path = Path(args.output or "predictions_output.csv")

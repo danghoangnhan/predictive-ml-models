@@ -1,11 +1,10 @@
 """Real-time prediction service."""
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, Optional
 import logging
-import json
 from datetime import datetime
+from typing import Any
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +19,7 @@ class Predictor:
         self.explainer = explainer
         self.prediction_cache = {}
 
-    def predict_health(
-        self, patient_data: Dict[str, Any], explain: bool = False
-    ) -> Dict[str, Any]:
+    def predict_health(self, patient_data: dict[str, Any], explain: bool = False) -> dict[str, Any]:
         """Predict health deterioration for a patient."""
 
         # Convert to DataFrame
@@ -55,7 +52,7 @@ class Predictor:
 
     def predict_stock_pattern(
         self, stock_data: pd.DataFrame, explain: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Predict stock chart pattern."""
 
         if len(stock_data) < 50:
@@ -79,9 +76,7 @@ class Predictor:
 
         return result
 
-    def predict_stock_forecast(
-        self, stock_data: pd.DataFrame, horizon: int = 30
-    ) -> Dict[str, Any]:
+    def predict_stock_forecast(self, stock_data: pd.DataFrame, horizon: int = 30) -> dict[str, Any]:
         """Forecast stock price."""
 
         if len(stock_data) == 0:
@@ -94,9 +89,7 @@ class Predictor:
             prices = stock_data.iloc[:, -1]
 
         # Forecast
-        forecasts, confidence = self.model.forecast(
-            pd.DataFrame(prices), horizon=horizon
-        )
+        forecasts, confidence = self.model.forecast(pd.DataFrame(prices), horizon=horizon)
 
         result = {
             "forecast": forecasts.tolist(),
@@ -117,7 +110,7 @@ class Predictor:
         else:
             return "critical"
 
-    def get_model_info(self) -> Dict[str, Any]:
+    def get_model_info(self) -> dict[str, Any]:
         """Get model metadata."""
         return {
             "model_type": type(self.model).__name__,

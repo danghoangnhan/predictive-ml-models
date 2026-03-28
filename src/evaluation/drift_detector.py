@@ -1,10 +1,11 @@
 """Data and concept drift detection."""
 
-import pandas as pd
-import numpy as np
-from scipy import stats
-from typing import Dict, Tuple, List, Optional
 import logging
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,7 @@ class DriftDetector:
         }
         logger.info("Baseline statistics fitted")
 
-    def kolmogorov_smirnov_test(
-        self, X_new: pd.DataFrame
-    ) -> Dict[str, Tuple[float, float]]:
+    def kolmogorov_smirnov_test(self, X_new: pd.DataFrame) -> dict[str, tuple[float, float]]:
         """Perform Kolmogorov-Smirnov test for each feature."""
         if self.baseline_stats is None:
             raise ValueError("Baseline not fitted. Call fit_baseline() first.")
@@ -56,7 +55,7 @@ class DriftDetector:
 
         return results
 
-    def population_stability_index(self, X_new: pd.DataFrame) -> Dict[str, float]:
+    def population_stability_index(self, X_new: pd.DataFrame) -> dict[str, float]:
         """Calculate Population Stability Index for each feature."""
         if self.baseline_stats is None:
             raise ValueError("Baseline not fitted. Call fit_baseline() first.")
@@ -87,12 +86,14 @@ class DriftDetector:
             baseline_pct = baseline_counts / baseline_counts.sum()
             new_pct = new_counts / (new_counts.sum() + 1e-8)
 
-            psi = np.sum((new_pct - baseline_pct) * np.log((new_pct + 1e-8) / (baseline_pct + 1e-8)))
+            psi = np.sum(
+                (new_pct - baseline_pct) * np.log((new_pct + 1e-8) / (baseline_pct + 1e-8))
+            )
             psi_scores[col] = psi
 
         return psi_scores
 
-    def detect_drift(self, X_new: pd.DataFrame) -> Dict[str, Any]:
+    def detect_drift(self, X_new: pd.DataFrame) -> dict[str, Any]:
         """Comprehensive drift detection."""
         if self.baseline_stats is None:
             raise ValueError("Baseline not fitted. Call fit_baseline() first.")
@@ -126,13 +127,11 @@ class DriftDetector:
 
         return drift_report
 
-    def get_drift_history(self) -> List[Dict]:
+    def get_drift_history(self) -> list[dict]:
         """Get drift detection history."""
         return self.drift_history
 
-    def statistical_summary_comparison(
-        self, X_new: pd.DataFrame
-    ) -> Dict[str, Dict[str, float]]:
+    def statistical_summary_comparison(self, X_new: pd.DataFrame) -> dict[str, dict[str, float]]:
         """Compare baseline and new data statistics."""
         if self.baseline_stats is None:
             raise ValueError("Baseline not fitted. Call fit_baseline() first.")

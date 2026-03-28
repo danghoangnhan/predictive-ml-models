@@ -47,19 +47,6 @@ dev = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-lint.select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes
-    "I",    # isort
-    "C",    # flake8-comprehensions
-    "B",    # flake8-bugbear
-    "UP",   # pyupgrade
-]
-lint.ignore = [
-    "E501",  # line too long
-    "W291",  # trailing whitespace
-]
 extend-exclude = [
     ".git",
     ".venv",
@@ -68,9 +55,25 @@ extend-exclude = [
     "dist",
 ]
 
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "C",    # flake8-comprehensions
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long
+    "B904",  # raise from
+    "C416",  # comprehension
+    "W291",  # trailing whitespace
+]
+
 [tool.ruff.lint.isort]
-profile = "black"
-line-length = 100
+combine-as-imports = true
 
 [tool.mypy]
 python_version = "3.11"

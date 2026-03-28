@@ -1,10 +1,11 @@
 """Hyperparameter optimization using Optuna."""
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, Callable, Optional
 import logging
+from collections.abc import Callable
+from typing import Any
+
 import optuna
+import pandas as pd
 from optuna.samplers import TPESampler
 from sklearn.model_selection import cross_val_score
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class HyperparameterOptimizer:
     """Optimize hyperparameters using Optuna."""
 
-    def __init__(self, n_trials: int = 50, timeout: Optional[int] = None, cv_folds: int = 5):
+    def __init__(self, n_trials: int = 50, timeout: int | None = None, cv_folds: int = 5):
         """Initialize optimizer."""
         self.n_trials = n_trials
         self.timeout = timeout
@@ -27,9 +28,9 @@ class HyperparameterOptimizer:
         X: pd.DataFrame,
         y: pd.Series,
         model_factory: Callable,
-        param_space: Dict[str, Any],
+        param_space: dict[str, Any],
         direction: str = "maximize",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run hyperparameter optimization."""
 
         def objective(trial):
@@ -58,9 +59,7 @@ class HyperparameterOptimizer:
             # Create and evaluate model
             try:
                 model = model_factory(**params)
-                scores = cross_val_score(
-                    model, X, y, cv=self.cv_folds, scoring="roc_auc"
-                )
+                scores = cross_val_score(model, X, y, cv=self.cv_folds, scoring="roc_auc")
                 return scores.mean()
             except Exception as e:
                 logger.warning(f"Trial failed: {e}")
@@ -86,7 +85,7 @@ class HyperparameterOptimizer:
 
         return self.best_params
 
-    def get_best_params(self) -> Dict[str, Any]:
+    def get_best_params(self) -> dict[str, Any]:
         """Get best hyperparameters."""
         return self.best_params
 

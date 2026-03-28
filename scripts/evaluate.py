@@ -3,13 +3,12 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
 from src.config import config
 from src.data.loader import DataLoader
 from src.data.preprocessor import Preprocessor
+from src.evaluation import DriftDetector, ModelMetrics
 from src.models import HealthPredictor
-from src.evaluation import ModelMetrics, Explainer, DriftDetector
 
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -31,7 +30,9 @@ def evaluate_health_model(args):
         return False
 
     # Prepare features
-    feature_cols = [col for col in df.columns if col not in ["patient_id", "clinical_deterioration"]]
+    feature_cols = [
+        col for col in df.columns if col not in ["patient_id", "clinical_deterioration"]
+    ]
     X = df[feature_cols]
     y = df["clinical_deterioration"].values
 

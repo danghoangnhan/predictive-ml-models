@@ -1,10 +1,10 @@
 """Cross-validation utilities."""
 
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import cross_val_score, cross_validate
-from typing import Dict, List, Any
 import logging
+
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import cross_val_score, cross_validate
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class CrossValidator:
         X: pd.DataFrame,
         y: pd.Series,
         scoring: str = "accuracy",
-    ) -> Dict[str, np.ndarray]:
+    ) -> dict[str, np.ndarray]:
         """Perform cross-validation."""
 
         cv = self.cv_folds if self.cv_folds > 1 else 5
@@ -31,8 +31,7 @@ class CrossValidator:
         scores = cross_val_score(model, X, y, cv=cv, scoring=scoring)
 
         logger.info(
-            f"Cross-validation (n_folds={cv}): "
-            f"mean={scores.mean():.4f}, std={scores.std():.4f}"
+            f"Cross-validation (n_folds={cv}): mean={scores.mean():.4f}, std={scores.std():.4f}"
         )
 
         return {
@@ -47,8 +46,8 @@ class CrossValidator:
         model,
         X: pd.DataFrame,
         y: pd.Series,
-        metrics: List[str],
-    ) -> Dict[str, Dict[str, float]]:
+        metrics: list[str],
+    ) -> dict[str, dict[str, float]]:
         """Perform cross-validation with multiple metrics."""
 
         cv = self.cv_folds if self.cv_folds > 1 else 5
@@ -66,5 +65,5 @@ class CrossValidator:
                     "std": scores.std(),
                 }
 
-        logger.info(f"Multi-metric cross-validation completed")
+        logger.info("Multi-metric cross-validation completed")
         return results

@@ -1,11 +1,12 @@
 """Integration tests for predictions."""
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
+
+from src.evaluation import ModelMetrics
 from src.models import HealthPredictor
 from src.serving import Predictor
-from src.evaluation import ModelMetrics
 
 
 class TestHealthMetrics:
@@ -42,13 +43,15 @@ class TestPredictionService:
     @pytest.fixture
     def trained_model(self):
         """Create a trained model."""
-        X = pd.DataFrame({
-            "gad7_score": np.random.randint(0, 22, 50),
-            "age": np.random.randint(18, 80, 50),
-            "gender": np.random.choice([0, 1], 50),
-            "bmi": np.random.uniform(18, 35, 50),
-            "sleep_hours": np.random.uniform(4, 10, 50),
-        })
+        X = pd.DataFrame(
+            {
+                "gad7_score": np.random.randint(0, 22, 50),
+                "age": np.random.randint(18, 80, 50),
+                "gender": np.random.choice([0, 1], 50),
+                "bmi": np.random.uniform(18, 35, 50),
+                "sleep_hours": np.random.uniform(4, 10, 50),
+            }
+        )
         y = np.random.randint(0, 2, 50)
 
         model = HealthPredictor(model_type="xgboost")

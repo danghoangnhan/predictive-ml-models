@@ -1,10 +1,10 @@
 """Tests for ML models."""
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
+
 from src.models import HealthPredictor, PatternDetector
-from src.data.preprocessor import Preprocessor
 
 
 class TestHealthPredictor:
@@ -13,13 +13,15 @@ class TestHealthPredictor:
     @pytest.fixture
     def sample_data(self):
         """Create sample health data."""
-        df = pd.DataFrame({
-            "gad7_score": np.random.randint(0, 22, 50),
-            "age": np.random.randint(18, 80, 50),
-            "gender": np.random.choice([0, 1], 50),
-            "bmi": np.random.uniform(18, 35, 50),
-            "sleep_hours": np.random.uniform(4, 10, 50),
-        })
+        df = pd.DataFrame(
+            {
+                "gad7_score": np.random.randint(0, 22, 50),
+                "age": np.random.randint(18, 80, 50),
+                "gender": np.random.choice([0, 1], 50),
+                "bmi": np.random.uniform(18, 35, 50),
+                "sleep_hours": np.random.uniform(4, 10, 50),
+            }
+        )
         y = np.random.randint(0, 2, 50)
         return df, y
 
@@ -68,14 +70,16 @@ class TestPatternDetector:
     def sample_stock_data(self):
         """Create sample stock data."""
         dates = pd.date_range("2024-01-01", periods=100)
-        df = pd.DataFrame({
-            "date": dates,
-            "open": np.random.uniform(95, 105, 100),
-            "high": np.random.uniform(100, 110, 100),
-            "low": np.random.uniform(90, 100, 100),
-            "close": np.random.uniform(95, 105, 100),
-            "volume": np.random.randint(900000, 1100000, 100),
-        })
+        df = pd.DataFrame(
+            {
+                "date": dates,
+                "open": np.random.uniform(95, 105, 100),
+                "high": np.random.uniform(100, 110, 100),
+                "low": np.random.uniform(90, 100, 100),
+                "close": np.random.uniform(95, 105, 100),
+                "volume": np.random.randint(900000, 1100000, 100),
+            }
+        )
         df = df.sort_values("date").reset_index(drop=True)
         return df
 

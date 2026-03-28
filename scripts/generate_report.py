@@ -1,16 +1,16 @@
 """Generate evaluation and drift detection report."""
 
 import argparse
-import logging
 import json
-from pathlib import Path
+import logging
 from datetime import datetime
+from pathlib import Path
 
 from src.config import config
 from src.data.loader import DataLoader
 from src.data.preprocessor import Preprocessor
+from src.evaluation import DriftDetector, ModelMetrics
 from src.models import HealthPredictor
-from src.evaluation import ModelMetrics, DriftDetector
 
 logging.basicConfig(
     level=config.LOG_LEVEL,
@@ -37,9 +37,7 @@ def generate_report(args):
     if len(df_health) > 0:
         # Prepare features
         feature_cols = [
-            col
-            for col in df_health.columns
-            if col not in ["patient_id", "clinical_deterioration"]
+            col for col in df_health.columns if col not in ["patient_id", "clinical_deterioration"]
         ]
         X = df_health[feature_cols]
         y = df_health["clinical_deterioration"].values

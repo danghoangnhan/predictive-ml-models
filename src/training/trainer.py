@@ -1,13 +1,12 @@
 """Model training pipeline."""
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, Optional
 import logging
-from pathlib import Path
+from typing import Any
 
-from src.models import HealthPredictor, PatternDetector
+import pandas as pd
+
 from src.data import DataSplitter
+from src.models import HealthPredictor, PatternDetector
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class Trainer:
         algorithm: str = "xgboost",
         test_size: float = 0.2,
         val_size: float = 0.1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train health prediction model."""
 
         # Split data
@@ -66,7 +65,7 @@ class Trainer:
         X: pd.DataFrame,
         y: pd.Series,
         test_size: float = 0.2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Train stock pattern detection model."""
 
         # Split data
@@ -98,7 +97,7 @@ class Trainer:
         """Get trained model."""
         return self.model
 
-    def get_training_history(self) -> Dict[str, Any]:
+    def get_training_history(self) -> dict[str, Any]:
         """Get training history."""
         return self.training_history
 
