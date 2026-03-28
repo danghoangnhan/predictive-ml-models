@@ -1,0 +1,112 @@
+# Finance Pattern Detector Configuration
+
+model:
+  type: "xgboost"  # xgboost, cnn, random_forest
+  
+  hyperparameters:
+    # XGBoost
+    xgboost:
+      n_estimators: 200
+      max_depth: 8
+      learning_rate: 0.05
+      subsample: 0.8
+      colsample_bytree: 0.8
+      objective: "multi:softprob"
+      num_class: 4  # triangle, wedge, flag, other
+      random_state: 42
+    
+    # CNN (if used)
+    cnn:
+      conv_filters: [32, 64, 128]
+      kernel_sizes: [3, 5, 7]
+      pool_size: 2
+      dense_layers: [64, 32]
+      dropout_rate: 0.3
+      learning_rate: 0.001
+      epochs: 100
+      batch_size: 32
+      early_stopping_patience: 15
+
+data:
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  random_state: 42
+  
+  preprocessing:
+    scaling: "minmax"  # standard, minmax
+    handle_missing: "forward_fill"  # forward_fill, interpolate
+    remove_outliers: false
+  
+  features:
+    candlestick:
+      - "open"
+      - "high"
+      - "low"
+      - "close"
+      - "volume"
+      - "body_ratio"
+      - "upper_wick_ratio"
+      - "lower_wick_ratio"
+    
+    technical:
+      - "atr"  # Average True Range
+      - "bollinger_upper"
+      - "bollinger_lower"
+      - "bollinger_width"
+      - "volume_sma_20"
+      - "volume_surge"
+    
+    pattern:
+      - "support_level"
+      - "resistance_level"
+      - "pattern_slope"
+      - "pattern_width"
+      - "pattern_height"
+      - "break_probability"
+
+training:
+  lookback_periods: 20  # Days to analyze for pattern
+  min_pattern_length: 5  # Min candles for valid pattern
+  
+  metrics:
+    - "accuracy"
+    - "precision_per_class"
+    - "recall_per_class"
+    - "f1_per_class"
+    - "confusion_matrix"
+  
+  validation_strategy: "time_series_split"  # cross_validation, time_series_split
+  cv_folds: 5
+  random_state: 42
+
+inference:
+  return_confidence: true
+  return_explanation: true
+  min_confidence_threshold: 0.7  # Only return predictions above this
+  
+  explainability:
+    method: "shap"  # shap, lime
+    num_features_to_explain: 10
+
+monitoring:
+  drift_detection:
+    enabled: true
+    test_method: "kl_divergence"
+    threshold: 0.05
+  
+  retraining_trigger:
+    enabled: true
+    drift_detected: true
+    performance_degradation: 0.05
+
+classes:
+  0: "triangle"
+  1: "wedge"
+  2: "flag"
+  3: "other"
+
+logging:
+  log_predictions: true
+  log_explanations: true
+  log_level: "INFO"

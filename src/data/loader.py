@@ -1,77 +1,106 @@
-"""Data loading utilities."""
-
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from typing import Tuple, Optional, Union
+from typing import Optional, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class DataLoader:
-    """Load and validate data from various sources."""
+    """Load data from CSV files."""
+    
+    @staticmethod
+    def load_health_data(filepath: str) -> pd.DataFrame:
+        """Load healthcare data (GAD-7 scores and journal entries)."""
+        try:
+            df = pd.read_csv(filepath)
+            logger.info(f"Loaded health data from {filepath}: shape {df.shape}")
+            return df
+        except FileNotFoundError:
+            logger.error(f"File not found: {filepath}")
+            raise
+        except Exception as e:
+            logger.error(f"Error loading health data: {e}")
+            raise
+    
+    @staticmethod
+    def load_finance_data(filepath: str) -> pd.DataFrame:
+        """Load finance data (OHLCV and patterns)."""
+        try:
+            df = pd.read_csv(filepath)
+            logger.info(f"Loaded finance data from {filepath}: shape {df.shape}")
+            return df
+        except FileNotFoundError:
+            logger.error(f"File not found: {filepath}")
+            raise
+        except Exception as e:
+            logger.error(f"Error loading finance data: {e}")
+            raise
+    
+    @staticmethod
+    def load_csv(filepath: str) -> pd.DataFrame:
+        """Generic CSV loader."""
+        return pd.read_csv(filepath)
 
-    def __init__(self, data_path: Union[str, Path] = "data/sample"):
-        """Initialize data loader."""
-        self.data_path = Path(data_path)
 
-    def load_health_data(self) -> pd.DataFrame:
-        """Load health/GAD-7 data."""
-        csv_path = self.data_path / "health_scores.csv"
-
-        if not csv_path.exists():
-            logger.warning(f"Health data file not found at {csv_path}")
-            return pd.DataFrame()
-
-        df = pd.read_csv(csv_path)
-        logger.info(f"Loaded health data: {df.shape[0]} rows, {df.shape[1]} columns")
-        return df
-
-    def load_stock_data(self) -> pd.DataFrame:
-        """Load stock pattern data."""
-        csv_path = self.data_path / "stock_patterns.csv"
-
-        if not csv_path.exists():
-            logger.warning(f"Stock data file not found at {csv_path}")
-            return pd.DataFrame()
-
-        df = pd.read_csv(csv_path)
-        logger.info(f"Loaded stock data: {df.shape[0]} rows, {df.shape[1]} columns")
-        return df
-
-    def load_csv(self, filename: str) -> pd.DataFrame:
-        """Load arbitrary CSV file."""
-        csv_path = self.data_path / filename
-
-        if not csv_path.exists():
-            raise FileNotFoundError(f"File not found: {csv_path}")
-
-        df = pd.read_csv(csv_path)
-        logger.info(f"Loaded {filename}: {df.shape[0]} rows, {df.shape[1]} columns")
-        return df
-
-    def validate_health_data(self, df: pd.DataFrame) -> bool:
-        """Validate health data structure."""
-        required_cols = {"patient_id", "gad7_score", "age", "gender", "clinical_deterioration"}
-
-        if not required_cols.issubset(set(df.columns)):
-            missing = required_cols - set(df.columns)
-            logger.error(f"Missing required columns: {missing}")
+class DataValidator:
+    """Validate data quality and format."""
+    
+    @staticmethod
+    def validate_health_columns(df: pd.DataFrame) -> bool:
+        """Validate required columns for health data."""
+        required_cols = ["patient_id", "gad7_score", "journal_text", "timestamp"]
+        missing = [col for col in required_cols if col not in df.columns]
+        if missing:
+            logger.warning(f"Missing columns: {missing}")
             return False
-
-        if df.isnull().sum().sum() > 0:
-            logger.warning(f"Found {df.isnull().sum().sum()} null values")
-
+        return True
+    
+    @staticmethod
+    def validate_finance_columns(df: pd.DataFrame) -> bool:
+        """Validate required columns for finance data."""
+        required_cols = ["symbol", "date", "open", "high", "low", "close", "volume"]
+        missing = [col for col in required_cols if col not in df.columns]
+        if missing:
+            logger.warning(f"Missing columns: {missing}")
+            return False
+        return True
+    
+    @staticmethod
+    def check_missing_values(df: pd.DataFrame, threshold: float = 0.5) -> bool:
+        """Check if missing values exceed threshold."""
+        missing_ratio = df.isnull().sum() / len(df)
+        if (missing_ratio > threshold).any():
+            logger.warning(f"High missing values detected:\n{missing_ratio[missing_ratio > threshold]}")
+            return False
         return True
 
-    def validate_stock_data(self, df: pd.DataFrame) -> bool:
-        """Validate stock data structure."""
-        required_cols = {"date", "open", "high", "low", "close", "volume", "pattern"}
 
-        if not required_cols.issubset(set(df.columns)):
-            missing = required_cols - set(df.columns)
-            logger.error(f"Missing required columns: {missing}")
-            return False
+def load_and_validate_health_data(filepath: str) -> pd.DataFrame:
+    """Load and validate health data."""
+    df = DataLoader.load_health_data(filepath)
+    validator = DataValidator()
+    
+    if not validator.validate_health_columns(df):
+        logger.error("Health data validation failed")
+        return None
+    
+    if not validator.check_missing_values(df):
+        logger.warning("Health data has missing values")
+    
+    return df
 
-        return True
+
+def load_and_validate_finance_data(filepath: str) -> pd.DataFrame:
+    """Load and validate finance data."""
+    df = DataLoader.load_finance_data(filepath)
+    validator = DataValidator()
+    
+    if not validator.validate_finance_columns(df):
+        logger.error("Finance data validation failed")
+        return None
+    
+    if not validator.check_missing_values(df):
+        logger.warning("Finance data has missing values")
+    
+    return df

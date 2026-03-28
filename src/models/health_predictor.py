@@ -1,104 +1,123 @@
-"""Mental health prediction model (GAD-7 based)."""
-
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-from typing import Dict, Tuple, Optional
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix
 import logging
-import pickle
-from pathlib import Path
+from .base_model import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class HealthPredictor:
-    """Predict patient mental health deterioration from GAD-7 scores."""
-
-    def __init__(self, model_type: str = "xgboost"):
-        """Initialize health predictor."""
-        self.model_type = model_type
-        self.model = None
-        self.feature_names = None
-        self.threshold = 0.65
-
-        if model_type == "xgboost":
-            self.model = XGBClassifier(
-                n_estimators=100,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                verbosity=0,
-            )
-        elif model_type == "random_forest":
-            self.model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10,
-                min_samples_split=5,
-                random_state=42,
-                n_jobs=-1,
-            )
-
-    def fit(
-        self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[np.ndarray] = None
-    ) -> "HealthPredictor":
-        """Train health predictor."""
-        self.feature_names = list(X.columns)
-        self.model.fit(X, y, sample_weight=sample_weight)
-        logger.info(f"Trained {self.model_type} health predictor on {len(X)} samples")
-        return self
-
+class HealthcarePredictor(BaseModel):
+    """Healthcare deterioration risk predictor based on GAD-7 trends."""
+    
+    def __init__(self, ensemble_models: list = None):
+        super().__init__(name="HealthcarePredictor", model_type="ensemble")
+        
+        self.ensemble_models = {}
+        if ensemble_models is None:
+            ensemble_models = ['logistic_regression', 'random_forest']
+        
+        for model_name in ensemble_models:
+            if model_name == 'logistic_regression':
+                self.ensemble_models['logistic_regression'] = LogisticRegression(
+                    C=1.0, max_iter=1000, random_state=42
+                )
+            elif model_name == 'random_forest':
+                self.ensemble_models['random_forest'] = RandomForestClassifier(
+                    n_estimators=100, max_depth=10, min_samples_split=5, random_state=42
+                )
+            elif model_name == 'neural_network':
+                self.ensemble_models['neural_network'] = MLPClassifier(
+                    hidden_layer_sizes=(64, 32, 16),
+                    learning_rate_init=0.001,
+                    max_iter=200,
+                    random_state=42,
+                    early_stopping=True,
+                    validation_fraction=0.1
+                )
+    
+    def train(self, X_train: pd.DataFrame, y_train: pd.Series, **kwargs) -> None:
+        """Train all ensemble models."""
+        logger.info(f"Training {self.name} with {len(self.ensemble_models)} models")
+        
+        for name, model in self.ensemble_models.items():
+            logger.info(f"Training {name}...")
+            model.fit(X_train, y_train)
+        
+        self.is_trained = True
+        self.feature_names = X_train.columns.tolist() if hasattr(X_train, 'columns') else None
+        logger.info("Training complete")
+    
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict clinical deterioration (0/1)."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-        return self.model.predict(X)
-
+        """Make ensemble predictions (majority vote)."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        predictions = []
+        probabilities = []
+        
+        for name, model in self.ensemble_models.items():
+            pred = model.predict(X)
+            predictions.append(pred)
+            
+            if hasattr(model, 'predict_proba'):
+                proba = model.predict_proba(X)[:, 1]
+                probabilities.append(proba)
+        
+        # Majority vote
+        ensemble_pred = np.array(predictions).T
+        final_predictions = (ensemble_pred.sum(axis=1) > len(self.ensemble_models) / 2).astype(int)
+        
+        # Average probability
+        final_proba = np.mean(probabilities, axis=0) if probabilities else None
+        
+        return final_predictions, final_proba
+    
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict deterioration probability."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-        return self.model.predict_proba(X)
-
-    def predict_with_risk_level(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-        """Predict with clinical risk levels: safe, warning, critical."""
-        proba = self.predict_proba(X)[:, 1]
-
-        risk_levels = np.zeros(len(proba), dtype=object)
-        risk_levels[proba < 0.35] = "safe"
-        risk_levels[(proba >= 0.35) & (proba < 0.65)] = "warning"
-        risk_levels[proba >= 0.65] = "critical"
-
-        return risk_levels, proba
-
-    def get_feature_importance(self) -> Dict[str, float]:
-        """Get feature importance scores."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
-        if hasattr(self.model, "feature_importances_"):
-            importances = self.model.feature_importances_
-        else:
-            raise ValueError(f"Model {self.model_type} does not support feature_importances_")
-
-        importance_dict = dict(zip(self.feature_names, importances))
-        return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
-
-    def save(self, path: Path) -> None:
-        """Save model to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
-        logger.info(f"Saved model to {path}")
-
-    @staticmethod
-    def load(path: Path) -> "HealthPredictor":
-        """Load model from disk."""
-        path = Path(path)
-        with open(path, "rb") as f:
-            model = pickle.load(f)
-        logger.info(f"Loaded model from {path}")
-        return model
+        """Get probability estimates."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        probabilities = []
+        
+        for name, model in self.ensemble_models.items():
+            if hasattr(model, 'predict_proba'):
+                proba = model.predict_proba(X)[:, 1]
+                probabilities.append(proba)
+        
+        return np.mean(probabilities, axis=0) if probabilities else None
+    
+    def evaluate(self, X_test: pd.DataFrame, y_test: pd.Series, **kwargs) -> dict:
+        """Evaluate model performance."""
+        predictions, probabilities = self.predict(X_test)
+        
+        metrics = {
+            'accuracy': (predictions == y_test).mean(),
+            'auc_roc': roc_auc_score(y_test, probabilities),
+            'precision': precision_score(y_test, predictions),
+            'recall': recall_score(y_test, predictions),
+            'f1': f1_score(y_test, predictions),
+            'confusion_matrix': confusion_matrix(y_test, predictions).tolist()
+        }
+        
+        logger.info(f"Evaluation results: {metrics}")
+        return metrics
+    
+    def get_feature_importance(self) -> dict:
+        """Get feature importance from Random Forest."""
+        if 'random_forest' not in self.ensemble_models:
+            logger.warning("Random Forest not in ensemble")
+            return None
+        
+        rf_model = self.ensemble_models['random_forest']
+        importances = rf_model.feature_importances_
+        
+        if self.feature_names:
+            importance_dict = {name: imp for name, imp in zip(self.feature_names, importances)}
+            importance_dict = dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
+            return importance_dict
+        
+        return importances

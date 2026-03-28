@@ -1,114 +1,153 @@
-"""Ensemble model combining multiple predictors."""
-
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
+from sklearn.ensemble import StackingClassifier, AdaBoostClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
+import lightgbm as lgb
+from sklearn.metrics import roc_auc_score, f1_score
 import logging
-from pathlib import Path
+from .base_model import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class EnsembleModel:
-    """Ensemble classifier combining multiple models."""
-
-    def __init__(self, models: Optional[List] = None, weights: Optional[List[float]] = None):
-        """Initialize ensemble model."""
-        self.models = models or []
-        self.weights = weights or [1.0 / len(models)] if models else []
-
-    def add_model(self, model, weight: float = 1.0) -> None:
-        """Add model to ensemble."""
-        self.models.append(model)
-        self.weights.append(weight)
-        # Normalize weights
-        total = sum(self.weights)
-        self.weights = [w / total for w in self.weights]
-        logger.info(f"Added model to ensemble. Total models: {len(self.models)}")
-
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "EnsembleModel":
-        """Fit all models in ensemble."""
-        for i, model in enumerate(self.models):
-            if hasattr(model, "fit"):
-                model.fit(X, y)
-                logger.info(f"Trained model {i+1}/{len(self.models)} in ensemble")
-
-        return self
-
+class EnsembleStackingModel(BaseModel):
+    """Stacking ensemble combining multiple base learners."""
+    
+    def __init__(self, use_xgboost: bool = True, use_lightgbm: bool = True):
+        super().__init__(name="EnsembleStacking", model_type="stacking")
+        
+        # Define base learners
+        base_learners = [
+            ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42)),
+            ('lr', LogisticRegression(random_state=42, max_iter=1000))
+        ]
+        
+        if use_xgboost:
+            base_learners.append(('xgb', xgb.XGBClassifier(n_estimators=100, max_depth=8, random_state=42)))
+        
+        if use_lightgbm:
+            base_learners.append(('lgb', lgb.LGBMClassifier(n_estimators=100, max_depth=8, random_state=42)))
+        
+        # Meta-learner
+        meta_learner = LogisticRegression(random_state=42)
+        
+        # Create stacking classifier
+        self.model = StackingClassifier(
+            estimators=base_learners,
+            final_estimator=meta_learner,
+            cv=5
+        )
+    
+    def train(self, X_train: pd.DataFrame, y_train: pd.Series, **kwargs) -> None:
+        """Train stacking ensemble."""
+        logger.info("Training EnsembleStacking model")
+        
+        self.model.fit(X_train, y_train)
+        self.is_trained = True
+        self.feature_names = X_train.columns.tolist() if hasattr(X_train, 'columns') else None
+        
+        logger.info("Training complete")
+    
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict using ensemble voting."""
-        if not self.models:
-            raise ValueError("Ensemble has no models")
-
-        predictions = []
-
-        for model in self.models:
-            if hasattr(model, "predict"):
-                pred = model.predict(X)
-                predictions.append(pred)
-
-        predictions = np.array(predictions)
-
-        # Weighted majority voting for classification
-        if predictions.dtype == object or len(predictions.shape) == 2:
-            # Handle multi-class or string predictions
-            unique_classes = np.unique(predictions)
-            weighted_votes = np.zeros(len(X))
-
-            for i, pred in enumerate(predictions):
-                for j, sample in enumerate(pred):
-                    if sample == unique_classes[-1]:  # Assume last class is positive
-                        weighted_votes[j] += self.weights[i]
-
-            return (weighted_votes > 0.5).astype(int)
-        else:
-            return np.mean(predictions * np.array(self.weights).reshape(-1, 1), axis=0).astype(int)
-
+        """Make predictions."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict(X)
+    
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict probability using ensemble averaging."""
-        if not self.models:
-            raise ValueError("Ensemble has no models")
+        """Get probability estimates."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict_proba(X)
+    
+    def evaluate(self, X_test: pd.DataFrame, y_test: pd.Series, **kwargs) -> dict:
+        """Evaluate model performance."""
+        predictions = self.predict(X_test)
+        probabilities = self.predict_proba(X_test)[:, 1]
+        
+        metrics = {
+            'auc_roc': roc_auc_score(y_test, probabilities),
+            'f1': f1_score(y_test, predictions),
+            'accuracy': (predictions == y_test).mean()
+        }
+        
+        logger.info(f"Evaluation results: {metrics}")
+        return metrics
+    
+    def get_feature_importance(self) -> dict:
+        """Get average feature importance from base learners."""
+        importances_list = []
+        
+        for name, estimator in self.model.estimators_:
+            if hasattr(estimator, 'feature_importances_'):
+                importances_list.append(estimator.feature_importances_)
+        
+        if importances_list and self.feature_names:
+            avg_importances = np.mean(importances_list, axis=0)
+            importance_dict = {name: imp for name, imp in zip(self.feature_names, avg_importances)}
+            importance_dict = dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
+            return importance_dict
+        
+        return None
 
-        probas = []
 
-        for model in self.models:
-            if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(X)
-                probas.append(proba)
-
-        if not probas:
-            raise ValueError("No models support predict_proba")
-
-        probas = np.array(probas)
-        weighted_proba = np.average(probas, axis=0, weights=self.weights)
-
-        return weighted_proba
-
-    def get_feature_importance(self) -> Dict[str, float]:
-        """Aggregate feature importance from all models."""
-        all_importances = {}
-
-        for i, model in enumerate(self.models):
-            if hasattr(model, "get_feature_importance"):
-                importances = model.get_feature_importance()
-                for feature, importance in importances.items():
-                    if feature not in all_importances:
-                        all_importances[feature] = 0
-                    all_importances[feature] += importance * self.weights[i]
-            elif hasattr(model, "feature_importances_"):
-                importances = model.feature_importances_
-                if hasattr(model, "feature_names"):
-                    for feature, importance in zip(model.feature_names, importances):
-                        if feature not in all_importances:
-                            all_importances[feature] = 0
-                        all_importances[feature] += importance * self.weights[i]
-
-        return dict(sorted(all_importances.items(), key=lambda x: x[1], reverse=True))
-
-    def get_model_count(self) -> int:
-        """Get number of models in ensemble."""
-        return len(self.models)
-
-    def get_model_weights(self) -> Dict[int, float]:
-        """Get model weights."""
-        return {i: w for i, w in enumerate(self.weights)}
+class XGBoostLGBStackingModel(BaseModel):
+    """Stacking with XGBoost and LightGBM as base learners."""
+    
+    def __init__(self):
+        super().__init__(name="XGBoostLGBStacking", model_type="xgb_lgb_stacking")
+        
+        base_learners = [
+            ('xgb', xgb.XGBClassifier(n_estimators=150, max_depth=8, learning_rate=0.05, random_state=42)),
+            ('lgb', lgb.LGBMClassifier(n_estimators=150, max_depth=8, learning_rate=0.05, random_state=42))
+        ]
+        
+        meta_learner = LogisticRegression(random_state=42, max_iter=1000)
+        
+        self.model = StackingClassifier(
+            estimators=base_learners,
+            final_estimator=meta_learner,
+            cv=5
+        )
+    
+    def train(self, X_train: pd.DataFrame, y_train: pd.Series, **kwargs) -> None:
+        """Train stacking ensemble."""
+        logger.info("Training XGBoost + LightGBM Stacking model")
+        
+        self.model.fit(X_train, y_train)
+        self.is_trained = True
+        self.feature_names = X_train.columns.tolist() if hasattr(X_train, 'columns') else None
+        
+        logger.info("Training complete")
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict(X)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get probability estimates."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict_proba(X)
+    
+    def evaluate(self, X_test: pd.DataFrame, y_test: pd.Series, **kwargs) -> dict:
+        """Evaluate model performance."""
+        predictions = self.predict(X_test)
+        probabilities = self.predict_proba(X_test)[:, 1]
+        
+        metrics = {
+            'auc_roc': roc_auc_score(y_test, probabilities),
+            'f1': f1_score(y_test, predictions),
+            'accuracy': (predictions == y_test).mean()
+        }
+        
+        logger.info(f"Evaluation results: {metrics}")
+        return metrics

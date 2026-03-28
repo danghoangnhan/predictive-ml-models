@@ -1,76 +1,84 @@
-"""Tests for data preprocessing."""
-
 import pytest
 import pandas as pd
 import numpy as np
-from src.data.preprocessor import Preprocessor
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from data.preprocessor import HealthcareFeatureEngineering, FinanceFeatureEngineering
 
 
-class TestPreprocessor:
-    """Test preprocessing utilities."""
+@pytest.fixture
+def sample_health_df():
+    """Create sample health data."""
+    dates = [datetime.now() - timedelta(days=i) for i in range(10)]
+    return pd.DataFrame({
+        'patient_id': ['P001'] * 10,
+        'gad7_score': [10, 12, 15, 14, 16, 18, 17, 19, 20, 18],
+        'journal_text': ['text'] * 10,
+        'timestamp': dates,
+        'label': [0, 0, 1, 1, 1, 1, 1, 1, 1, 1]
+    })
 
-    def test_health_data_preprocessing(self):
-        """Test health data preprocessing."""
-        df = pd.DataFrame({
-            "patient_id": ["P001", "P002"],
-            "gad7_score": [10, 15],
-            "age": [35, 45],
-            "gender": ["M", "F"],
-            "clinical_deterioration": [0, 1],
-        })
 
-        preprocessor = Preprocessor()
-        result = preprocessor.preprocess_health_data(df, fit=True)
+@pytest.fixture
+def sample_finance_df():
+    """Create sample finance data."""
+    return pd.DataFrame({
+        'symbol': ['AAPL'] * 10,
+        'date': pd.date_range(start='2024-01-01', periods=10),
+        'open': np.random.uniform(100, 110, 10),
+        'high': np.random.uniform(110, 120, 10),
+        'low': np.random.uniform(90, 100, 10),
+        'close': np.random.uniform(100, 110, 10),
+        'volume': np.random.uniform(1000000, 10000000, 10)
+    })
 
-        assert len(result) == 2
-        assert "gad7_severity" in result.columns
-        assert "age_group" in result.columns
 
-    def test_stock_data_preprocessing(self):
-        """Test stock data preprocessing."""
-        df = pd.DataFrame({
-            "date": pd.date_range("2024-01-01", periods=10),
-            "open": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109],
-            "high": [102, 103, 104, 105, 106, 107, 108, 109, 110, 111],
-            "low": [99, 100, 101, 102, 103, 104, 105, 106, 107, 108],
-            "close": [101, 102, 103, 104, 105, 106, 107, 108, 109, 110],
-            "volume": [1000000] * 10,
-            "pattern": ["breakout"] * 10,
-        })
+def test_healthcare_temporal_features(sample_health_df):
+    """Test temporal feature extraction."""
+    df = HealthcareFeatureEngineering.extract_temporal_features(sample_health_df)
+    
+    assert 'day_of_week' in df.columns
+    assert 'week_of_year' in df.columns
+    assert 'day_of_month' in df.columns
 
-        preprocessor = Preprocessor()
-        result = preprocessor.preprocess_stock_data(df, fit=True)
 
-        assert len(result) > 0
-        assert "returns" in result.columns
-        assert "volatility" in result.columns
+def test_healthcare_trend_features(sample_health_df):
+    """Test trend feature extraction."""
+    df = HealthcareFeatureEngineering.extract_temporal_features(sample_health_df)
+    df = HealthcareFeatureEngineering.extract_trend_features(df)
+    
+    assert 'gad7_7day_ma' in df.columns
+    assert 'gad7_trend' in df.columns
+    assert 'gad7_volatility' in df.columns
 
-    def test_feature_scaling(self):
-        """Test feature scaling."""
-        df = pd.DataFrame({
-            "feature1": [1, 2, 3, 4, 5],
-            "feature2": [10, 20, 30, 40, 50],
-        })
 
-        preprocessor = Preprocessor()
-        scaled = preprocessor.scale_features(df, fit=True)
+def test_healthcare_nlp_features(sample_health_df):
+    """Test NLP feature extraction."""
+    df = HealthcareFeatureEngineering.extract_nlp_features(sample_health_df)
+    
+    assert 'journal_sentiment' in df.columns
+    assert 'journal_anxiety_keywords_count' in df.columns
+    assert 'journal_length' in df.columns
 
-        assert scaled.shape == (5, 2)
-        assert np.allclose(scaled.mean(axis=0), [0, 0], atol=1e-10)
 
-    def test_missing_value_handling(self):
-        """Test missing value handling."""
-        df = pd.DataFrame({
-            "patient_id": ["P001", "P002", "P003"],
-            "gad7_score": [10, np.nan, 15],
-            "age": [35, 45, np.nan],
-            "gender": ["M", "F", "M"],
-            "clinical_deterioration": [0, 1, 0],
-        })
+def test_finance_candlestick_features(sample_finance_df):
+    """Test candlestick feature extraction."""
+    df = FinanceFeatureEngineering.extract_candlestick_features(sample_finance_df)
+    
+    assert 'body_ratio' in df.columns
+    assert 'upper_wick_ratio' in df.columns
+    assert 'lower_wick_ratio' in df.columns
 
-        preprocessor = Preprocessor()
-        result = preprocessor.preprocess_health_data(df, fit=True)
 
-        # Check no NaN values in numeric columns
-        numeric_cols = result.select_dtypes(include=[np.number]).columns
-        assert result[numeric_cols].isnull().sum().sum() == 0
+def test_finance_technical_features(sample_finance_df):
+    """Test technical feature extraction."""
+    df = FinanceFeatureEngineering.extract_technical_features(sample_finance_df)
+    
+    assert 'atr' in df.columns
+    assert 'bollinger_upper' in df.columns
+    assert 'bollinger_lower' in df.columns
+    assert 'volume_sma_20' in df.columns

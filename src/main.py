@@ -1,29 +1,30 @@
-"""FastAPI application for predictive ML models."""
-
+import logging
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
 import sys
+from pathlib import Path
 
-from src.config import config
-from src.api.routes import router, set_predictors
-from src.data.loader import DataLoader
-from src.data.preprocessor import Preprocessor
-from src.models import HealthPredictor
-from src.serving import Predictor
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent))
 
-# Configure logging
+from config import settings
+from api import routes
+from models.health_predictor import HealthcarePredictor
+from models.pattern_detector import PatternDetector
+
+# Setup logging
 logging.basicConfig(
-    level=config.LOG_LEVEL,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
+# Create FastAPI app
 app = FastAPI(
-    title=config.APP_NAME,
-    description="Production ML platform for healthcare and finance predictions",
-    version=config.APP_VERSION,
+    title="Predictive ML Models API",
+    description="Healthcare and Finance prediction models",
+    version="1.0.0"
 )
 
 # Add CORS middleware
@@ -35,97 +36,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global predictors
-health_predictor = None
+# Include routes
+app.include_router(routes.router)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize models on startup."""
-    global health_predictor
-
-    logger.info(f"Starting {config.APP_NAME} v{config.APP_VERSION}")
-
+    logger.info("Starting up Predictive ML Models API")
+    
     try:
-        # Load sample data and train basic model
-        loader = DataLoader(config.SAMPLE_DATA_PATH)
-        df = loader.load_health_data()
-
-        if len(df) > 0:
-            # Prepare features and target
-            feature_cols = [col for col in df.columns if col not in ["patient_id", "clinical_deterioration"]]
-            X = df[feature_cols]
-            y = df["clinical_deterioration"]
-
-            # Initialize preprocessor
-            preprocessor = Preprocessor()
-            X_processed = preprocessor.preprocess_health_data(X, fit=True)
-
-            # Train model
-            model = HealthPredictor(model_type="xgboost")
-            model.fit(X_processed, y)
-
-            # Initialize predictor service
-            health_predictor = Predictor(model, preprocessor=preprocessor)
-
-            logger.info("Health model loaded successfully")
-        else:
-            logger.warning("No training data found, models will be unavailable")
-
-        # Set global predictors in routes
-        set_predictors(health_predictor, None)
-
+        # Load models
+        health_model = HealthcarePredictor()
+        pattern_model = PatternDetector()
+        
+        # Set models in routes
+        routes.set_models(health_model, pattern_model)
+        
+        logger.info("Models initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize models: {e}")
+        logger.error(f"Error initializing models: {e}")
+        # Continue startup even if models fail to load
+        pass
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown."""
-    logger.info("Shutting down application")
+    logger.info("Shutting down Predictive ML Models API")
 
 
-# Include routes
-app.include_router(router)
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "name": config.APP_NAME,
-        "version": config.APP_VERSION,
-        "docs": "/docs",
-        "status": "running",
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "health_model_ready": health_predictor is not None,
-    }
-
-
-@app.get("/config")
-async def get_config_info():
-    """Get configuration info."""
-    return {
-        "app_env": config.APP_ENV,
-        "debug": config.DEBUG,
-        "log_level": config.LOG_LEVEL,
-    }
+def main():
+    """Run the application."""
+    logger.info(f"Starting API on {settings.API_HOST}:{settings.API_PORT}")
+    
+    uvicorn.run(
+        "main:app",
+        host=settings.API_HOST,
+        port=settings.API_PORT,
+        reload=settings.API_DEBUG,
+        log_level="info"
+    )
 
 
 if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "src.main:app",
-        host=config.API_HOST,
-        port=config.API_PORT,
-        workers=config.API_WORKERS,
-        reload=config.DEBUG,
-    )
+    main()

@@ -1,131 +1,115 @@
-"""Model explainability using SHAP and LIME."""
-
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional, Tuple
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
-class Explainer:
-    """Generate model explanations using SHAP and LIME."""
-
-    def __init__(self, model, X_background: Optional[pd.DataFrame] = None):
-        """Initialize explainer."""
+class ShapExplainer:
+    """SHAP-based model explainability."""
+    
+    def __init__(self, model, X_train: pd.DataFrame):
         self.model = model
-        self.X_background = X_background
+        self.X_train = X_train
         self.explainer = None
-        self._init_explainer()
-
-    def _init_explainer(self) -> None:
-        """Initialize SHAP explainer."""
+    
+    def create_explainer(self):
+        """Create SHAP explainer."""
         try:
             import shap
-
-            if hasattr(self.model, "model"):
-                model = self.model.model
-            else:
-                model = self.model
-
-            # TreeExplainer for tree-based models
-            if hasattr(model, "predict") and hasattr(model, "feature_importances_"):
-                if self.X_background is not None:
-                    self.explainer = shap.TreeExplainer(model)
-                    logger.info("Initialized SHAP TreeExplainer")
+            self.explainer = shap.TreeExplainer(self.model)
+            logger.info("SHAP explainer created")
         except ImportError:
-            logger.warning("SHAP not available")
-
-    def explain_prediction(self, X: pd.DataFrame, sample_idx: int = 0) -> Dict[str, Any]:
-        """Generate SHAP explanation for a single prediction."""
-
+            logger.error("SHAP not installed")
+            raise
+    
+    def explain_prediction(self, x: np.ndarray) -> dict:
+        """Explain a single prediction using SHAP."""
         if self.explainer is None:
-            logger.warning("Explainer not initialized, returning feature importance instead")
-            return self._feature_importance_explanation(X)
-
-        try:
-            import shap
-
-            # Get SHAP values
-            shap_values = self.explainer.shap_values(X)
-
-            # Handle different return types
-            if isinstance(shap_values, list):
-                # For multi-class, take positive class
-                sv = shap_values[1]
-            else:
-                sv = shap_values
-
-            explanation = {
-                "prediction": self.model.predict(X)[sample_idx],
-                "shap_values": sv[sample_idx].tolist() if hasattr(sv[sample_idx], "tolist") else sv[sample_idx],
-                "base_value": float(self.explainer.expected_value),
-                "feature_names": list(X.columns),
-            }
-
-            return explanation
-        except Exception as e:
-            logger.warning(f"SHAP explanation failed: {e}")
-            return self._feature_importance_explanation(X)
-
-    def explain_multiple(self, X: pd.DataFrame, n_samples: int = 10) -> list:
-        """Generate explanations for multiple predictions."""
-        explanations = []
-
-        for i in range(min(n_samples, len(X))):
-            exp = self.explain_prediction(X, sample_idx=i)
-            explanations.append(exp)
-
-        return explanations
-
-    def feature_importance(self) -> Dict[str, float]:
-        """Get global feature importance."""
-        try:
-            if hasattr(self.model, "get_feature_importance"):
-                return self.model.get_feature_importance()
-            elif hasattr(self.model, "feature_importances_"):
-                model = self.model.model if hasattr(self.model, "model") else self.model
-                importances = model.feature_importances_
-                feature_names = (
-                    self.model.feature_names
-                    if hasattr(self.model, "feature_names")
-                    else [f"feature_{i}" for i in range(len(importances))]
-                )
-                return dict(zip(feature_names, importances))
-        except Exception as e:
-            logger.warning(f"Feature importance calculation failed: {e}")
-
-        return {}
-
-    def _feature_importance_explanation(self, X: pd.DataFrame) -> Dict[str, Any]:
-        """Fallback explanation using feature importance."""
-        importance = self.feature_importance()
-
+            self.create_explainer()
+        
+        shap_values = self.explainer.shap_values(x)
+        base_value = self.explainer.expected_value
+        
         return {
-            "prediction": self.model.predict(X)[0],
-            "feature_importance": importance,
-            "method": "feature_importance_fallback",
+            'shap_values': shap_values,
+            'base_value': base_value
+        }
+    
+    def feature_importance(self, X: pd.DataFrame, top_n: int = 10) -> dict:
+        """Get feature importance from SHAP values."""
+        if self.explainer is None:
+            self.create_explainer()
+        
+        shap_values = self.explainer.shap_values(X)
+        
+        # Calculate mean absolute SHAP values
+        if isinstance(shap_values, list):
+            mean_abs_shap = np.abs(shap_values[1]).mean(axis=0)
+        else:
+            mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        
+        feature_importance = {
+            X.columns[i]: mean_abs_shap[i]
+            for i in range(len(X.columns))
+        }
+        
+        # Sort and return top N
+        sorted_importance = dict(sorted(feature_importance.items(), key=lambda x: x[1], reverse=True))
+        return {k: v for k, v in list(sorted_importance.items())[:top_n]}
+
+
+class LimeExplainer:
+    """LIME-based model explainability."""
+    
+    def __init__(self, model, X_train: pd.DataFrame, feature_names: list = None):
+        self.model = model
+        self.X_train = X_train
+        self.feature_names = feature_names or X_train.columns.tolist()
+        self.explainer = None
+    
+    def create_explainer(self):
+        """Create LIME explainer."""
+        try:
+            import lime
+            import lime.lime_tabular
+            self.explainer = lime.lime_tabular.LimeTabularExplainer(
+                self.X_train.values,
+                feature_names=self.feature_names,
+                mode='classification'
+            )
+            logger.info("LIME explainer created")
+        except ImportError:
+            logger.error("LIME not installed")
+            raise
+    
+    def explain_prediction(self, x: np.ndarray, top_features: int = 10) -> dict:
+        """Explain a prediction using LIME."""
+        if self.explainer is None:
+            self.create_explainer()
+        
+        explanation = self.explainer.explain_instance(x, self.model.predict_proba)
+        
+        return {
+            'prediction': explanation.predicted_label,
+            'top_features': explanation.as_list(label=1)[:top_features]
         }
 
-    def pdp_explanation(
-        self, X: pd.DataFrame, feature_name: str, n_points: int = 20
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate partial dependence plot data."""
-        if feature_name not in X.columns:
-            raise ValueError(f"Feature '{feature_name}' not found in data")
 
-        feature_values = np.linspace(X[feature_name].min(), X[feature_name].max(), n_points)
-        predictions = []
-
-        for val in feature_values:
-            X_temp = X.copy()
-            X_temp[feature_name] = val
-
-            if hasattr(self.model, "predict_proba"):
-                pred = self.model.predict_proba(X_temp).mean(axis=0)
-            else:
-                pred = self.model.predict(X_temp).mean()
-
-            predictions.append(pred)
-
-        return feature_values, np.array(predictions)
+class FeatureImportance:
+    """Model-agnostic feature importance."""
+    
+    @staticmethod
+    def get_importance(model, X_test: pd.DataFrame, y_test: np.ndarray) -> dict:
+        """Get feature importance from model."""
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+            feature_dict = {
+                X_test.columns[i]: importances[i]
+                for i in range(len(X_test.columns))
+            }
+            return dict(sorted(feature_dict.items(), key=lambda x: x[1], reverse=True))
+        
+        logger.warning("Model does not support feature_importances_")
+        return None

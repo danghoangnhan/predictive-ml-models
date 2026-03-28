@@ -1,165 +1,137 @@
-"""Model training script."""
+#!/usr/bin/env python
+"""Training script for ML models."""
 
+import sys
 import argparse
 import logging
-import sys
 from pathlib import Path
 
-from src.config import config
-from src.data.loader import DataLoader
-from src.data.preprocessor import Preprocessor
-from src.training.trainer import Trainer
-from src.models import HealthPredictor, PatternDetector
+# Setup path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-logging.basicConfig(
-    level=config.LOG_LEVEL,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+from data.loader import load_and_validate_health_data, load_and_validate_finance_data
+from data.preprocessor import HealthcareFeatureEngineering, FinanceFeatureEngineering
+from data.splitter import DataSplitter
+from models.health_predictor import HealthcarePredictor
+from models.pattern_detector import PatternDetector
+from config import settings
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
-def train_health_model(args):
-    """Train health prediction model."""
-    logger.info("Starting health model training...")
-
+def train_healthcare_model(data_path: str, output_path: str):
+    """Train healthcare predictor."""
+    logger.info("Training healthcare model...")
+    
     # Load data
-    loader = DataLoader(config.SAMPLE_DATA_PATH)
-    df = loader.load_health_data()
-
-    if len(df) == 0:
-        logger.error("No health data found")
-        return False
-
-    if not loader.validate_health_data(df):
-        logger.error("Health data validation failed")
-        return False
-
-    # Prepare features
-    feature_cols = [col for col in df.columns if col not in ["patient_id", "clinical_deterioration"]]
+    df = load_and_validate_health_data(data_path)
+    if df is None:
+        logger.error("Failed to load health data")
+        return
+    
+    # Feature engineering
+    df = HealthcareFeatureEngineering.engineer_all_features(df)
+    
+    # Prepare features and target
+    feature_cols = [col for col in df.columns if col not in ['patient_id', 'journal_text', 'timestamp', 'label', 'target']]
     X = df[feature_cols]
-    y = df["clinical_deterioration"]
-
-    # Preprocess
-    preprocessor = Preprocessor()
-    X_processed = preprocessor.preprocess_health_data(X, fit=True)
-
-    # Train
-    trainer = Trainer(model_type="health")
-    history = trainer.train_health_model(
-        X_processed,
-        y,
-        algorithm=args.algorithm,
-        test_size=args.test_size,
-        val_size=args.val_size,
-    )
-
-    logger.info(f"Training completed: {history}")
-
+    y = df.get('label', df.get('target', None))
+    
+    if y is None:
+        logger.warning("No target column found. Using random labels for demo.")
+        import numpy as np
+        y = np.random.randint(0, 2, len(X))
+    
+    # Split data
+    X_train, X_val, X_test, y_train, y_val, y_test = DataSplitter.stratified_split(X, y)
+    
+    # Train model
+    model = HealthcarePredictor(ensemble_models=['logistic_regression', 'random_forest'])
+    model.train(X_train, y_train)
+    
+    # Evaluate
+    metrics = model.evaluate(X_test, y_test)
+    logger.info(f"Healthcare model metrics: {metrics}")
+    
     # Save model
-    model = trainer.get_model()
-    model.save(config.HEALTH_MODEL_PATH)
-    logger.info(f"Model saved to {config.HEALTH_MODEL_PATH}")
-
-    return True
+    model.save(output_path)
+    logger.info(f"Model saved to {output_path}")
 
 
-def train_stock_model(args):
-    """Train stock pattern model."""
-    logger.info("Starting stock pattern model training...")
-
+def train_finance_model(data_path: str, output_path: str):
+    """Train pattern detector model."""
+    logger.info("Training finance pattern detection model...")
+    
     # Load data
-    loader = DataLoader(config.SAMPLE_DATA_PATH)
-    df = loader.load_stock_data()
-
-    if len(df) == 0:
-        logger.error("No stock data found")
-        return False
-
-    if not loader.validate_stock_data(df):
-        logger.error("Stock data validation failed")
-        return False
-
-    # Preprocess
-    preprocessor = Preprocessor()
-    df_processed = preprocessor.preprocess_stock_data(df, fit=True)
-
-    # Extract features
-    detector = PatternDetector()
-    features = detector.extract_pattern_features(df_processed)
-
-    if len(features) == 0:
-        logger.error("No features extracted")
-        return False
-
-    # Get target
-    if "pattern" in df_processed.columns:
-        y = df_processed.loc[features.index, "pattern"]
-    else:
-        logger.error("Pattern column not found")
-        return False
-
-    # Train
-    trainer = Trainer(model_type="stock")
-    history = trainer.train_stock_pattern_model(features, y, test_size=args.test_size)
-
-    logger.info(f"Training completed: {history}")
-
+    df = load_and_validate_finance_data(data_path)
+    if df is None:
+        logger.error("Failed to load finance data")
+        return
+    
+    # Feature engineering
+    df = FinanceFeatureEngineering.engineer_all_features(df)
+    
+    # Prepare features and target
+    feature_cols = [col for col in df.columns if col not in ['symbol', 'date', 'label', 'target']]
+    X = df[feature_cols]
+    y = df.get('label', df.get('target', None))
+    
+    if y is None:
+        logger.warning("No target column found. Using random labels for demo.")
+        import numpy as np
+        y = np.random.randint(0, 4, len(X))
+    
+    # Split data
+    X_train, X_val, X_test, y_train, y_val, y_test = DataSplitter.time_series_split(X, y)
+    
+    # Train model
+    model = PatternDetector(model_type='xgboost')
+    model.train(X_train, y_train)
+    
+    # Evaluate
+    metrics = model.evaluate(X_test, y_test)
+    logger.info(f"Finance model metrics: {metrics}")
+    
     # Save model
-    model = trainer.get_model()
-    model.save(config.STOCK_MODEL_PATH)
-    logger.info(f"Model saved to {config.STOCK_MODEL_PATH}")
-
-    return True
+    model.save(output_path)
+    logger.info(f"Model saved to {output_path}")
 
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Train ML models")
     parser.add_argument(
-        "--model",
-        type=str,
-        choices=["health", "stock", "all"],
-        default="health",
-        help="Model to train",
+        "--domain",
+        choices=["healthcare", "finance"],
+        required=True,
+        help="Domain to train"
     )
     parser.add_argument(
-        "--algorithm",
-        type=str,
-        choices=["xgboost", "random_forest"],
-        default="xgboost",
-        help="Algorithm for health model",
+        "--data-path",
+        help="Path to training data"
     )
     parser.add_argument(
-        "--test-size",
-        type=float,
-        default=0.2,
-        help="Test set size",
+        "--output-path",
+        help="Path to save model"
     )
     parser.add_argument(
-        "--val-size",
-        type=float,
-        default=0.1,
-        help="Validation set size",
+        "--config",
+        help="Path to config file"
     )
-
+    
     args = parser.parse_args()
-
-    success = True
-
-    if args.model in ["health", "all"]:
-        if not train_health_model(args):
-            success = False
-
-    if args.model in ["stock", "all"]:
-        if not train_stock_model(args):
-            success = False
-
-    if success:
-        logger.info("All training completed successfully")
-        sys.exit(0)
-    else:
-        logger.error("Training failed")
-        sys.exit(1)
+    
+    if args.domain == "healthcare":
+        data_path = args.data_path or str(settings.SAMPLE_DATA_PATH / "health_scores.csv")
+        output_path = args.output_path or str(settings.MODELS_DIR / "healthcare_ensemble.pkl")
+        train_healthcare_model(data_path, output_path)
+    
+    elif args.domain == "finance":
+        data_path = args.data_path or str(settings.SAMPLE_DATA_PATH / "stock_patterns.csv")
+        output_path = args.output_path or str(settings.MODELS_DIR / "finance_xgboost.pkl")
+        train_finance_model(data_path, output_path)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,103 @@
+# Healthcare Predictor Configuration
+
+model:
+  type: "ensemble"  # ensemble, logistic_regression, random_forest, neural_network
+  ensemble_models:
+    - "logistic_regression"
+    - "random_forest"
+    - "neural_network"
+  
+  hyperparameters:
+    # Logistic Regression
+    logistic_regression:
+      C: 1.0
+      max_iter: 1000
+      random_state: 42
+
+    # Random Forest
+    random_forest:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 5
+      min_samples_leaf: 2
+      random_state: 42
+
+    # Neural Network
+    neural_network:
+      hidden_layers: [64, 32, 16]
+      activation: "relu"
+      learning_rate: 0.001
+      epochs: 50
+      batch_size: 16
+      dropout_rate: 0.3
+      early_stopping_patience: 10
+
+data:
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  random_state: 42
+  
+  preprocessing:
+    scaling: "standard"  # standard, minmax
+    handle_missing: "mean"  # mean, median, drop
+    remove_outliers: true
+    outlier_threshold: 3.0  # Standard deviations
+
+  features:
+    temporal:
+      - "gad7_score"
+      - "gad7_7day_ma"
+      - "gad7_14day_ma"
+      - "gad7_trend"
+      - "days_since_last_assessment"
+      - "day_of_week"
+      - "week_of_year"
+    
+    nlp:
+      - "journal_sentiment"
+      - "journal_anxiety_keywords_count"
+      - "journal_positive_keywords_count"
+      - "journal_length"
+    
+    derived:
+      - "gad7_rate_of_change"
+      - "gad7_volatility"
+      - "consecutive_high_scores"
+
+training:
+  metrics:
+    - "accuracy"
+    - "auc_roc"
+    - "precision"
+    - "recall"
+    - "f1"
+  
+  validation_strategy: "cross_validation"  # cross_validation, hold_out
+  cv_folds: 5
+  random_state: 42
+
+inference:
+  threshold: 0.5  # Classification threshold for binary prediction
+  return_confidence: true
+  return_explanation: true
+  
+  explainability:
+    method: "shap"  # shap, lime
+    num_features_to_explain: 10
+
+monitoring:
+  drift_detection:
+    enabled: true
+    test_method: "kolmogorov_smirnov"  # kolmogorov_smirnov, kl_divergence
+    threshold: 0.05
+  
+  retraining_trigger:
+    enabled: true
+    drift_detected: true
+    performance_degradation: 0.05  # 5% drop
+
+logging:
+  log_predictions: true
+  log_explanations: true
+  log_level: "INFO"

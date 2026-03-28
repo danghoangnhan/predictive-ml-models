@@ -1,77 +1,57 @@
-"""Pydantic models for API request/response validation."""
-
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Any
-from datetime import datetime
+from typing import List, Optional, Dict, Any
 
 
 class HealthPredictionRequest(BaseModel):
-    """Health prediction request."""
-    gad7_score: int = Field(..., ge=0, le=21, description="GAD-7 score (0-21)")
-    age: int = Field(..., ge=0, le=120, description="Age in years")
-    gender: str = Field(..., description="M or F")
-    bmi: Optional[float] = None
-    sleep_hours: Optional[float] = None
+    """Request model for health prediction."""
+    patient_id: str
+    gad7_score: int = Field(..., ge=0, le=21)
+    journal_text: str
+    days_since_last_assessment: int = 7
+    history: Optional[List[int]] = None
 
 
 class HealthPredictionResponse(BaseModel):
-    """Health prediction response."""
+    """Response model for health prediction."""
     prediction: int
-    probability: float
-    risk_level: str
-    timestamp: datetime
+    risk_score: float
+    confidence: float
     explanation: Optional[Dict[str, Any]] = None
 
 
-class StockPatternRequest(BaseModel):
-    """Stock pattern detection request."""
-    symbol: str = Field(..., description="Stock symbol")
-    lookback_days: int = Field(default=60, ge=20)
+class PatternPredictionRequest(BaseModel):
+    """Request model for pattern prediction."""
+    symbol: str
+    ohlcv: List[List[float]]
+    pattern_lookback_days: int = 20
 
 
-class StockPatternResponse(BaseModel):
-    """Stock pattern response."""
+class PatternPredictionResponse(BaseModel):
+    """Response model for pattern prediction."""
     pattern: str
-    confidence: Dict[str, float]
-    timestamp: datetime
+    confidence: float
+    breakout_probability: Optional[float] = None
+    support_level: Optional[float] = None
+    resistance_level: Optional[float] = None
 
 
-class StockForecastRequest(BaseModel):
-    """Stock forecast request."""
-    symbol: str = Field(..., description="Stock symbol")
-    horizon: int = Field(default=30, ge=1, le=365)
+class TrainingRequest(BaseModel):
+    """Request model for model training."""
+    domain: str  # healthcare or finance
+    data_path: str
+    model_type: str = "ensemble"
 
 
-class StockForecastResponse(BaseModel):
-    """Stock forecast response."""
-    forecast: List[float]
-    confidence_lower: List[float]
-    confidence_upper: List[float]
-    horizon: int
-    timestamp: datetime
+class TrainingResponse(BaseModel):
+    """Response model for training."""
+    status: str
+    job_id: str
+    estimated_duration_seconds: int
 
 
-class HealthBatchPredictionResponse(BaseModel):
-    """Batch prediction response."""
-    total_samples: int
-    successful_predictions: int
-    failed_samples: int
-    predictions: List[int]
-    probabilities: Optional[List[List[float]]] = None
-
-
-class ModelInfoResponse(BaseModel):
-    """Model information response."""
-    model_type: str
-    has_explainer: bool
-    has_preprocessor: bool
-    timestamp: datetime
-
-
-class DriftDetectionResponse(BaseModel):
-    """Drift detection response."""
-    drift_detected: bool
-    threshold: float
-    drifted_features: List[tuple]
-    psi_scores: Dict[str, float]
-    num_samples: int
+class HealthCheckResponse(BaseModel):
+    """Health check response."""
+    status: str
+    models_loaded: List[str]
+    uptime_seconds: int
+    timestamp: str

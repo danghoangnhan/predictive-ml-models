@@ -1,142 +1,119 @@
-"""Stock chart pattern detection model."""
-
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from typing import Dict, Tuple, Optional, List
+import xgboost as xgb
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 import logging
-import pickle
-from pathlib import Path
+from .base_model import BaseModel
 
 logger = logging.getLogger(__name__)
 
 
-class PatternDetector:
-    """Detect technical chart patterns in stock data."""
-
-    PATTERNS = ["head_shoulders", "double_bottom", "triangle", "breakout", "consolidation"]
-
-    def __init__(self):
-        """Initialize pattern detector."""
-        self.model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=8,
-            min_samples_split=5,
-            random_state=42,
-            n_jobs=-1,
-        )
-        self.feature_names = None
-        self.label_to_pattern = {i: p for i, p in enumerate(self.PATTERNS)}
-
-    def extract_pattern_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Extract technical features for pattern detection."""
-        features = pd.DataFrame(index=df.index)
-
-        # Volatility
-        features["volatility"] = df["close"].pct_change().rolling(20).std()
-
-        # Support and resistance (simple: min/max of lookback)
-        features["support"] = df["low"].rolling(20).min()
-        features["resistance"] = df["high"].rolling(20).max()
-
-        # Range
-        features["range"] = (df["high"] - df["low"]) / df["close"]
-
-        # Volume
-        features["volume_ratio"] = df["volume"] / df["volume"].rolling(20).mean()
-
-        # Moving averages
-        features["sma_20"] = df["close"].rolling(20).mean()
-        features["sma_50"] = df["close"].rolling(50).mean()
-        features["ma_ratio"] = features["sma_20"] / (features["sma_50"] + 1e-8)
-
-        # Momentum
-        features["momentum"] = df["close"].diff(5)
-        features["roc"] = df["close"].pct_change(10)
-
-        # Price position relative to bands
-        features["bb_position"] = (
-            (df["close"] - features["sma_20"]) /
-            (2 * df["close"].rolling(20).std() + 1e-8)
-        )
-
-        features.dropna(inplace=True)
-        return features
-
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "PatternDetector":
-        """Train pattern detector."""
-        self.feature_names = list(X.columns)
-        self.model.fit(X, y)
-        logger.info(f"Trained pattern detector on {len(X)} samples")
-        return self
-
+class PatternDetector(BaseModel):
+    """Finance pattern detector for candlestick chart patterns."""
+    
+    PATTERN_CLASSES = {
+        0: "triangle",
+        1: "wedge",
+        2: "flag",
+        3: "other"
+    }
+    
+    def __init__(self, model_type: str = 'xgboost'):
+        super().__init__(name="PatternDetector", model_type=model_type)
+        
+        if model_type == 'xgboost':
+            self.model = xgb.XGBClassifier(
+                n_estimators=200,
+                max_depth=8,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                objective='multi:softprob',
+                num_class=4,
+                random_state=42
+            )
+        elif model_type == 'random_forest':
+            self.model = RandomForestClassifier(
+                n_estimators=200,
+                max_depth=15,
+                min_samples_split=5,
+                random_state=42
+            )
+    
+    def train(self, X_train: pd.DataFrame, y_train: pd.Series, **kwargs) -> None:
+        """Train pattern detector model."""
+        logger.info(f"Training {self.name} with {self.model_type}")
+        
+        self.model.fit(X_train, y_train)
+        self.is_trained = True
+        self.feature_names = X_train.columns.tolist() if hasattr(X_train, 'columns') else None
+        
+        logger.info("Training complete")
+    
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Predict chart pattern."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-        predictions = self.model.predict(X)
-        return np.array([self.label_to_pattern.get(p, "unknown") for p in predictions])
-
-    def predict_proba(self, X: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, float]]:
-        """Predict pattern with confidence scores."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
-        proba = self.model.predict_proba(X)
-        probabilities = {}
-
-        for i, pattern in enumerate(self.PATTERNS):
-            probabilities[pattern] = float(proba[0, i]) if len(proba) > 0 else 0.0
-
-        top_pattern = self.PATTERNS[np.argmax(proba[0])] if len(proba) > 0 else "unknown"
-        return top_pattern, probabilities
-
-    def detect_patterns_in_window(self, df: pd.DataFrame) -> List[Dict]:
-        """Detect multiple patterns in sliding window."""
-        patterns_detected = []
-
-        if len(df) < 50:
-            logger.warning("Insufficient data for pattern detection")
-            return patterns_detected
-
-        features = self.extract_pattern_features(df)
-
-        if len(features) == 0:
-            return patterns_detected
-
-        X = features.iloc[[-1]]  # Last row
-        pattern, confidence = self.predict_proba(X)
-
-        patterns_detected.append({
-            "pattern": pattern,
-            "confidence": confidence,
-            "date": df.index[-1] if hasattr(df.index, '__getitem__') else None,
-        })
-
-        return patterns_detected
-
-    def get_feature_importance(self) -> Dict[str, float]:
+        """Predict chart patterns."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict(X)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get probability estimates for each pattern class."""
+        if not self.is_trained:
+            raise ValueError("Model must be trained before prediction")
+        
+        return self.model.predict_proba(X)
+    
+    def predict_with_confidence(self, X: pd.DataFrame) -> tuple:
+        """Predict patterns with confidence scores."""
+        predictions = self.predict(X)
+        probabilities = self.predict_proba(X)
+        confidences = np.max(probabilities, axis=1)
+        
+        return predictions, confidences
+    
+    def evaluate(self, X_test: pd.DataFrame, y_test: pd.Series, **kwargs) -> dict:
+        """Evaluate model performance on all classes."""
+        predictions = self.predict(X_test)
+        
+        metrics = {
+            'accuracy': accuracy_score(y_test, predictions),
+            'precision': precision_score(y_test, predictions, average='weighted'),
+            'recall': recall_score(y_test, predictions, average='weighted'),
+            'f1': f1_score(y_test, predictions, average='weighted'),
+            'confusion_matrix': confusion_matrix(y_test, predictions).tolist()
+        }
+        
+        # Per-class metrics
+        for class_idx, class_name in self.PATTERN_CLASSES.items():
+            class_mask = y_test == class_idx
+            if class_mask.sum() > 0:
+                metrics[f'{class_name}_precision'] = precision_score(
+                    y_test, predictions, labels=[class_idx], average='weighted', zero_division=0
+                )
+                metrics[f'{class_name}_recall'] = recall_score(
+                    y_test, predictions, labels=[class_idx], average='weighted', zero_division=0
+                )
+        
+        logger.info(f"Evaluation results: {metrics}")
+        return metrics
+    
+    def get_feature_importance(self) -> dict:
         """Get feature importance."""
-        if self.model is None:
-            raise ValueError("Model not trained. Call fit() first.")
-
+        if not hasattr(self.model, 'feature_importances_'):
+            logger.warning(f"Model {self.model_type} does not support feature importance")
+            return None
+        
         importances = self.model.feature_importances_
-        importance_dict = dict(zip(self.feature_names, importances))
-        return dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
-
-    def save(self, path: Path) -> None:
-        """Save model to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
-        logger.info(f"Saved pattern detector to {path}")
-
-    @staticmethod
-    def load(path: Path) -> "PatternDetector":
-        """Load model from disk."""
-        path = Path(path)
-        with open(path, "rb") as f:
-            model = pickle.load(f)
-        logger.info(f"Loaded pattern detector from {path}")
-        return model
+        
+        if self.feature_names:
+            importance_dict = {name: imp for name, imp in zip(self.feature_names, importances)}
+            importance_dict = dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
+            return importance_dict
+        
+        return importances
+    
+    def get_pattern_name(self, class_idx: int) -> str:
+        """Get pattern name from class index."""
+        return self.PATTERN_CLASSES.get(class_idx, "unknown")

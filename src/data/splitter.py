@@ -1,91 +1,92 @@
-"""Train/validation/test data splitting utilities."""
-
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
-from typing import Tuple, List, Optional
+from typing import Tuple
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class DataSplitter:
-    """Split data into train, validation, and test sets."""
-
+    """Split data into train/val/test sets."""
+    
     @staticmethod
-    def split_train_val_test(
+    def stratified_split(
         X: pd.DataFrame,
         y: pd.Series,
-        test_size: float = 0.2,
-        val_size: float = 0.1,
-        random_state: int = 42,
-        stratify: bool = False,
+        train_ratio: float = 0.7,
+        val_ratio: float = 0.15,
+        test_ratio: float = 0.15,
+        random_state: int = 42
     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
-        """Split data into train, validation, and test sets."""
-
-        stratify_y = y if stratify else None
-
-        # First split: train+val vs test
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state, stratify=stratify_y
-        )
-
-        # Second split: train vs val
-        val_size_adjusted = val_size / (1 - test_size)
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp,
-            y_temp,
-            test_size=val_size_adjusted,
+        """Split data with stratification for classification tasks."""
+        
+        assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
+        
+        # First split: train + temp (val + test)
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y,
+            test_size=(val_ratio + test_ratio),
             random_state=random_state,
-            stratify=stratify_y[X_temp.index] if stratify else None,
+            stratify=y
         )
-
-        logger.info(
-            f"Split data: train={X_train.shape[0]}, "
-            f"val={X_val.shape[0]}, test={X_test.shape[0]}"
+        
+        # Second split: val and test
+        test_size_ratio = test_ratio / (val_ratio + test_ratio)
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp,
+            test_size=test_size_ratio,
+            random_state=random_state,
+            stratify=y_temp
         )
-
+        
+        logger.info(f"Data split - Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
+        
         return X_train, X_val, X_test, y_train, y_val, y_test
-
-    @staticmethod
-    def kfold_split(
-        X: pd.DataFrame,
-        y: Optional[pd.Series] = None,
-        n_splits: int = 5,
-        stratified: bool = False,
-        random_state: int = 42,
-    ) -> List[Tuple[np.ndarray, np.ndarray]]:
-        """Generate k-fold cross-validation splits."""
-
-        if stratified and y is not None:
-            kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-            splits = list(kf.split(X, y))
-        else:
-            kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-            splits = list(kf.split(X))
-
-        logger.info(f"Generated {len(splits)} k-fold splits (n_splits={n_splits})")
-        return splits
-
+    
     @staticmethod
     def time_series_split(
         X: pd.DataFrame,
-        test_size: float = 0.2,
-        val_size: float = 0.1,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """Split time series data (no shuffling, temporal order preserved)."""
-
+        y: pd.Series,
+        train_ratio: float = 0.7,
+        val_ratio: float = 0.15,
+        test_ratio: float = 0.15
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+        """Split data in chronological order for time series tasks."""
+        
+        assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
+        
         n = len(X)
-        test_idx = int(n * (1 - test_size))
-        val_idx = int(test_idx * (1 - val_size))
-
-        X_train = X.iloc[:val_idx]
-        X_val = X.iloc[val_idx:test_idx]
-        X_test = X.iloc[test_idx:]
-
-        logger.info(
-            f"Time series split: train={len(X_train)}, "
-            f"val={len(X_val)}, test={len(X_test)}"
-        )
-
-        return X_train, X_val, X_test
+        train_end = int(n * train_ratio)
+        val_end = train_end + int(n * val_ratio)
+        
+        X_train, X_val, X_test = X.iloc[:train_end], X.iloc[train_end:val_end], X.iloc[val_end:]
+        y_train, y_val, y_test = y.iloc[:train_end], y.iloc[train_end:val_end], y.iloc[val_end:]
+        
+        logger.info(f"Time series split - Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
+        
+        return X_train, X_val, X_test, y_train, y_val, y_test
+    
+    @staticmethod
+    def kfold_split(
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_splits: int = 5,
+        random_state: int = 42
+    ) -> list:
+        """Create k-fold splits for cross-validation."""
+        from sklearn.model_selection import StratifiedKFold
+        
+        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+        folds = []
+        
+        for train_idx, test_idx in skf.split(X, y):
+            folds.append((
+                X.iloc[train_idx],
+                X.iloc[test_idx],
+                y.iloc[train_idx],
+                y.iloc[test_idx]
+            ))
+        
+        logger.info(f"Created {n_splits} k-fold splits")
+        return folds

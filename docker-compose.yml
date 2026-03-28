@@ -5,56 +5,39 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: predictive-ml-api
     ports:
       - "8000:8000"
     environment:
-      - APP_ENV=production
-      - DEBUG=false
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - API_WORKERS=4
+      - API_DEBUG=false
+      - ENVIRONMENT=production
       - LOG_LEVEL=INFO
-      - DRIFT_DETECTION_ENABLED=true
-      - HIPAA_COMPLIANCE=true
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./models:/app/models
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
-    restart: unless-stopped
-    networks:
-      - predictive-ml-network
 
-  # Optional: Database for audit logs
-  postgres:
-    image: postgres:14-alpine
-    container_name: predictive-ml-db
-    environment:
-      POSTGRES_USER: mluser
-      POSTGRES_PASSWORD: mlpassword
-      POSTGRES_DB: predictions
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+  # Optional: Add Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
     ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mluser"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
     restart: unless-stopped
-    networks:
-      - predictive-ml-network
-
-networks:
-  predictive-ml-network:
-    driver: bridge
+    profiles:
+      - monitoring
 
 volumes:
-  postgres_data:
+  model-cache:
+  data-cache:
